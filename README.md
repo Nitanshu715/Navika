@@ -21,10 +21,6 @@
 [![FAISS](https://img.shields.io/badge/FAISS-Vector%20Search-10b981?style=for-the-badge)](https://faiss.ai)
 [![License](https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge)](LICENSE)
 
-<br/>
-
-<br/>
-
 ---
 
 </div>
