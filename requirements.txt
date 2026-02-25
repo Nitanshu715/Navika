@@ -1,2 +1,9 @@
-
 reflex==0.8.26
+google-generativeai
+sentence-transformers
+faiss-cpu
+numpy
+sqlalchemy
+python-dotenv
+httpx
+bcrypt
