@@ -23,8 +23,6 @@
 
 <br/>
 
-> *Built for **Hack For Green Bharat** · February 2026*
-
 <br/>
 
 ---
