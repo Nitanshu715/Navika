@@ -1,4 +1,5 @@
 <div align="center">
+
 <pre>
 ███╗   ██╗ █████╗ ██╗   ██╗██╗██╗  ██╗ █████╗
 ████╗  ██║██╔══██╗██║   ██║██║██║ ██╔╝██╔══██╗
@@ -7,7 +8,6 @@
 ██║ ╚████║██║  ██║ ╚████╔╝ ██║██║  ██╗██║  ██║
 ╚═╝  ╚═══╝╚═╝  ╚═╝  ╚═══╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
 </pre>
-</div>
 
 ### **AI-Powered Personal Finance Intelligence**
 *RAG · FAISS Vector Search · Anomaly Detection · Real-Time Risk Analysis*
