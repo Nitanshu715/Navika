@@ -1,0 +1,248 @@
+# finance_ai/auth_db.py
+import os
+import secrets
+import hashlib
+from datetime import datetime, timedelta
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+# users.db is SEPARATE from finance.db (which holds transactions)
+_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "users.db")
+DB_URL   = f"sqlite:///{_DB_PATH}"
+
+engine    = create_engine(DB_URL, connect_args={"check_same_thread": False})
+DBSession = sessionmaker(bind=engine)
+Base      = declarative_base()
+
+
+# ── Models ────────────────────────────────────────────────────────────────────
+
+class User(Base):
+    __tablename__ = "users"
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    email         = Column(String(255), unique=True, nullable=False, index=True)
+    name          = Column(String(255), nullable=False, default="")
+    password_hash = Column(String(255), nullable=True)   # null for Google-only accounts
+    google_id     = Column(String(255), nullable=True, unique=True)
+    is_verified   = Column(Boolean, default=False)
+    is_active     = Column(Boolean, default=True)
+    avatar_url    = Column(Text, nullable=True)
+    created_at    = Column(DateTime, default=datetime.utcnow)
+    last_login    = Column(DateTime, nullable=True)
+
+
+class EmailVerificationToken(Base):
+    __tablename__ = "email_verification_tokens"
+    id         = Column(Integer, primary_key=True)
+    user_id    = Column(Integer, nullable=False)
+    token      = Column(String(128), unique=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used       = Column(Boolean, default=False)
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+    id         = Column(Integer, primary_key=True)
+    user_id    = Column(Integer, nullable=False)
+    token      = Column(String(128), unique=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used       = Column(Boolean, default=False)
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+    id         = Column(Integer, primary_key=True)
+    user_id    = Column(Integer, nullable=False, index=True)
+    token      = Column(String(128), unique=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# Create all tables automatically on first run
+Base.metadata.create_all(engine)
+
+
+# ── Password helpers ──────────────────────────────────────────────────────────
+
+def hash_password(pw: str) -> str:
+    salt   = secrets.token_hex(16)
+    hashed = hashlib.sha256((salt + pw).encode()).hexdigest()
+    return f"{salt}:{hashed}"
+
+def verify_password(pw: str, stored: str) -> bool:
+    try:
+        salt, hashed = stored.split(":", 1)
+        return hashlib.sha256((salt + pw).encode()).hexdigest() == hashed
+    except Exception:
+        return False
+
+def _new_token(n: int = 48) -> str:
+    return secrets.token_urlsafe(n)
+
+
+# ── User CRUD ─────────────────────────────────────────────────────────────────
+
+def create_user(email: str, name: str = "", password: str = None,
+                google_id: str = None, avatar_url: str = None,
+                is_verified: bool = False):
+    s = DBSession()
+    try:
+        if s.query(User).filter_by(email=email.lower().strip()).first():
+            return None   # email already registered
+        u = User(
+            email         = email.lower().strip(),
+            name          = name.strip(),
+            password_hash = hash_password(password) if password else None,
+            google_id     = google_id,
+            avatar_url    = avatar_url,
+            is_verified   = is_verified,
+        )
+        s.add(u); s.commit(); s.refresh(u)
+        return u
+    except Exception as e:
+        s.rollback()
+        print(f"[auth_db] create_user error: {e}")
+        return None
+    finally:
+        s.close()
+
+def get_user_by_email(email: str):
+    s = DBSession()
+    try:    return s.query(User).filter_by(email=email.lower().strip()).first()
+    finally: s.close()
+
+def get_user_by_id(uid: int):
+    s = DBSession()
+    try:    return s.query(User).filter_by(id=uid).first()
+    finally: s.close()
+
+def get_user_by_google_id(gid: str):
+    s = DBSession()
+    try:    return s.query(User).filter_by(google_id=gid).first()
+    finally: s.close()
+
+def update_last_login(uid: int):
+    s = DBSession()
+    try:
+        u = s.query(User).filter_by(id=uid).first()
+        if u: u.last_login = datetime.utcnow(); s.commit()
+    finally: s.close()
+
+def link_google(uid: int, google_id: str, avatar_url: str = None):
+    s = DBSession()
+    try:
+        u = s.query(User).filter_by(id=uid).first()
+        if u:
+            u.google_id   = google_id
+            u.is_verified = True
+            if avatar_url: u.avatar_url = avatar_url
+            s.commit()
+    finally: s.close()
+
+
+# ── Email verification ────────────────────────────────────────────────────────
+
+def create_verification_token(user_id: int) -> str:
+    s = DBSession(); tok = _new_token()
+    try:
+        s.add(EmailVerificationToken(
+            user_id    = user_id,
+            token      = tok,
+            expires_at = datetime.utcnow() + timedelta(hours=24),
+        ))
+        s.commit()
+        return tok
+    finally:
+        s.close()
+
+def verify_email_token(token_str: str) -> bool:
+    s = DBSession()
+    try:
+        t = s.query(EmailVerificationToken).filter_by(token=token_str, used=False).first()
+        if not t or t.expires_at < datetime.utcnow():
+            return False
+        t.used = True
+        u = s.query(User).filter_by(id=t.user_id).first()
+        if u: u.is_verified = True
+        s.commit()
+        return True
+    except:
+        s.rollback(); return False
+    finally:
+        s.close()
+
+
+# ── Password reset ────────────────────────────────────────────────────────────
+
+def verify_user_directly(user_id: int):
+    """Directly mark a user as verified — used when email is not configured."""
+    s = DBSession()
+    try:
+        u = s.query(User).filter_by(id=user_id).first()
+        if u:
+            u.is_verified = True
+            s.commit()
+    finally:
+        s.close()
+
+
+def create_reset_token(user_id: int) -> str:
+    s = DBSession(); tok = _new_token()
+    try:
+        s.add(PasswordResetToken(
+            user_id    = user_id,
+            token      = tok,
+            expires_at = datetime.utcnow() + timedelta(hours=1),
+        ))
+        s.commit()
+        return tok
+    finally:
+        s.close()
+
+def reset_password(token_str: str, new_pw: str) -> bool:
+    s = DBSession()
+    try:
+        t = s.query(PasswordResetToken).filter_by(token=token_str, used=False).first()
+        if not t or t.expires_at < datetime.utcnow(): return False
+        t.used = True
+        u = s.query(User).filter_by(id=t.user_id).first()
+        if u: u.password_hash = hash_password(new_pw)
+        s.commit(); return True
+    except:
+        s.rollback(); return False
+    finally:
+        s.close()
+
+
+# ── Sessions ──────────────────────────────────────────────────────────────────
+
+def create_session(user_id: int) -> str:
+    s = DBSession(); tok = _new_token()
+    try:
+        s.add(UserSession(
+            user_id    = user_id,
+            token      = tok,
+            expires_at = datetime.utcnow() + timedelta(days=30),
+        ))
+        s.commit()
+        return tok
+    finally:
+        s.close()
+
+def get_user_from_session(token: str):
+    s = DBSession()
+    try:
+        sess = s.query(UserSession).filter_by(token=token).first()
+        if not sess or sess.expires_at < datetime.utcnow():
+            return None
+        return s.query(User).filter_by(id=sess.user_id).first()
+    finally:
+        s.close()
+
+def delete_session(token: str):
+    s = DBSession()
+    try:
+        s.query(UserSession).filter_by(token=token).delete()
+        s.commit()
+    finally:
+        s.close()
