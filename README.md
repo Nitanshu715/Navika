@@ -17,7 +17,7 @@
 [![Live Demo](https://img.shields.io/badge/%E2%97%88%20LIVE%20DEMO-navika.reflex.run-00d4ff?style=for-the-badge&logoColor=white)](https://navika-demo.reflex.run)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Reflex](https://img.shields.io/badge/Reflex-0.8.26-7c3aed?style=for-the-badge)](https://reflex.dev)
-[![Gemini](https://img.shields.io/badge/Gemini-1.5%20Flash-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
+[![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
 [![FAISS](https://img.shields.io/badge/FAISS-Vector%20Search-10b981?style=for-the-badge)](https://faiss.ai)
 [![License](https://img.shields.io/badge/License-MIT-f59e0b?style=for-the-badge)](LICENSE)
 
@@ -29,7 +29,7 @@
 
 **Navika** is a full-stack AI financial intelligence platform that answers the question every person asks but never gets a real answer to: *"Where is my money actually going — and is it a problem?"*
 
-It ingests your transaction data, encodes every transaction into a **384-dimensional semantic vector** using MiniLM embeddings, stores them in a **FAISS index** for sub-millisecond retrieval, and feeds the most contextually relevant transactions into **Gemini 1.5 Flash** to generate grounded, hallucination-resistant financial risk insights.
+It ingests your transaction data, encodes every transaction into a **384-dimensional semantic vector** using MiniLM embeddings, stores them in a **FAISS index** for sub-millisecond retrieval, and feeds the most contextually relevant transactions into **Gemini 2.5 Flash** to generate grounded, hallucination-resistant financial risk insights.
 
 The result is a Bloomberg-style dark dashboard that gives you real-time spending intelligence, semantic natural-language querying over your own financial history, and contextual AI risk analysis that **only uses your actual data** — no invented numbers.
 
@@ -43,7 +43,7 @@ all-MiniLM-L6-v2 embedder (384-dim vector)
 FAISS IndexFlatL2 — exact L2 search → top-5 most relevant transactions
      │
      ▼
-Gemini 1.5 Flash — temp=0.2 — grounded on retrieved context only
+Gemini 2.5 Flash — temp=0.2 — grounded on retrieved context only
      │
      ▼
 Structured JSON: risk_level · main_issue · key_observations · recommended_actions
@@ -104,7 +104,7 @@ Structured JSON: risk_level · main_issue · key_observations · recommended_act
 │  └──────┬──────────────┘            └────────────────────────────┘  │
 │         │                                                           │
 │  ┌──────▼──────────────┐            ┌────────────────────────────┐  │
-│  │  all-MiniLM-L6-v2  │            │   Gemini 1.5 Flash         │  │
+│  │  all-MiniLM-L6-v2  │            │   Gemini 2.5 Flash         │  │
 │  │  22.7M parameters  │───────────▶│   temperature = 0.2        │  │
 │  │  384-dim vectors   │            │   top_p = 0.8              │  │
 │  │  lazy-loaded       │            │   JSON-only output         │  │
@@ -275,7 +275,7 @@ Google  ──▶  OAuth 2.0 OpenID Connect
 
 - Ask any question about your finances in plain English
 - Retrieves 5 most semantically similar transactions from your history
-- Passes context plus aggregate statistics to Gemini 1.5 Flash
+- Passes context plus aggregate statistics to Gemini 2.5 Flash
 - Returns structured JSON with `risk_level`, `main_issue`, `key_observations`, `recommended_actions`
 - Temperature 0.2 ensures consistent, factual, non-hallucinated analysis
 
@@ -308,7 +308,7 @@ State Mgmt       Reflex State + WS       Real-time sync via WebSocket
 ─────────────────────────────────────────────────────────────────
 Embeddings       all-MiniLM-L6-v2        384-dim text vector encoding
 Vector Store     FAISS IndexFlatL2       Exact L2 nearest-neighbor search
-LLM              Gemini 1.5 Flash        Contextual risk analysis
+LLM              Gemini 2.5 Flash        Contextual risk analysis
 ML Framework     sentence-transformers   Embedding pipeline
 ─────────────────────────────────────────────────────────────────
 Auth DB          SQLite + SQLAlchemy     Users, sessions, tokens
