@@ -29,6 +29,7 @@ jobs:
       - name: Deploy
         run: |
           reflex deploy \
+            --new \
             --env GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
             --env GMAIL_USER=${{ secrets.GMAIL_USER }} \
             --env "GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}" \
