@@ -1,0 +1,46 @@
+name: Deploy Navika
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Reflex
+        run: pip install reflex==0.8.28 reflex-hosting-cli
+
+      - name: Login to Reflex Cloud
+        run: |
+          mkdir -p $HOME/.local/share/reflex
+          echo '{"access_token":"${{ secrets.REFLEX_TOKEN }}"}' > $HOME/.local/share/reflex/hosting_v1.json
+
+      - name: Deploy
+        run: |
+          reflex deploy \
+            --env GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
+            --env GMAIL_USER=${{ secrets.GMAIL_USER }} \
+            --env "GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}" \
+            --env GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }} \
+            --env GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }} \
+            --env APP_URL=https://navika-gold-star.reflex.run \
+            --no-interactive
+```
+Save.
+
+---
+
+## Step 4 — Also update REFLEX_TOKEN secret
+
+Go to:
+```
+https://github.com/Nitanshu715/Navika/settings/secrets/actions

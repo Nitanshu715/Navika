@@ -1,0 +1,16 @@
+.env
+tmp/
+venv/
+.web/
+.reflex/
+__pycache__/
+*.pyc
+*.db
+.states/
+assets/external/
+et --hard*
+crumb*
+0.20.3
+26.0.1
+reflex
+runtime.txt
