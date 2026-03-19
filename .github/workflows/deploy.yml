@@ -34,5 +34,5 @@ jobs:
             --env "GMAIL_APP_PASSWORD=${{ secrets.GMAIL_APP_PASSWORD }}" \
             --env GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }} \
             --env GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }} \
-            --env APP_URL=https://navika-gold-star.reflex.run \
+            --env APP_URL=https://navika-silver-piano.reflex.run \
             --no-interactive
