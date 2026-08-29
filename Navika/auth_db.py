@@ -3,7 +3,7 @@ import os
 import secrets
 import hashlib
 from datetime import datetime, timedelta
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, Text, Float
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # users.db is SEPARATE from finance.db (which holds transactions)
@@ -40,6 +40,18 @@ class TransactionNote(Base):
     content    = Column(Text, nullable=False)
     tag        = Column(String(50), default="General")
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class UserBudget(Base):
+    __tablename__ = "user_budgets"
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    user_id       = Column(Integer, nullable=False, unique=True, index=True)
+    monthly_cap   = Column(Float, default=25000.0)
+    food_cap      = Column(Float, default=8000.0)
+    shopping_cap  = Column(Float, default=10000.0)
+    transport_cap = Column(Float, default=4000.0)
+    ent_cap       = Column(Float, default=3000.0)
+    updated_at    = Column(DateTime, default=datetime.utcnow)
 
 
 class EmailVerificationToken(Base):
@@ -320,12 +332,72 @@ def get_transaction_notes(user_id: int):
     finally:
         s.close()
 
-def delete_transaction_note(note_id: int, user_id: int):
+def delete_transaction_note(user_id: int, note_id: int) -> bool:
     s = DBSession()
     try:
-        s.query(TransactionNote).filter_by(id=note_id, user_id=user_id).delete()
-        s.commit()
+        n = s.query(TransactionNote).filter_by(id=note_id, user_id=user_id).first()
+        if n:
+            s.delete(n)
+            s.commit()
+            return True
+        return False
     finally:
         s.close()
 
-Base.metadata.create_all(engine)
+
+def get_user_budget(user_id: int) -> dict:
+    s = DBSession()
+    try:
+        b = s.query(UserBudget).filter_by(user_id=user_id).first()
+        if not b:
+            return {
+                "monthly_cap": 25000.0,
+                "food_cap": 8000.0,
+                "shopping_cap": 10000.0,
+                "transport_cap": 4000.0,
+                "ent_cap": 3000.0,
+            }
+        return {
+            "monthly_cap": float(b.monthly_cap or 25000.0),
+            "food_cap": float(b.food_cap or 8000.0),
+            "shopping_cap": float(b.shopping_cap or 10000.0),
+            "transport_cap": float(b.transport_cap or 4000.0),
+            "ent_cap": float(b.ent_cap or 3000.0),
+        }
+    finally:
+        s.close()
+
+
+def save_user_budget(user_id: int, monthly: float, food: float, shopping: float, transport: float, ent: float) -> dict:
+    s = DBSession()
+    try:
+        b = s.query(UserBudget).filter_by(user_id=user_id).first()
+        if not b:
+            b = UserBudget(
+                user_id=user_id,
+                monthly_cap=monthly,
+                food_cap=food,
+                shopping_cap=shopping,
+                transport_cap=transport,
+                ent_cap=ent,
+            )
+            s.add(b)
+        else:
+            b.monthly_cap = monthly
+            b.food_cap = food
+            b.shopping_cap = shopping
+            b.transport_cap = transport
+            b.ent_cap = ent
+            b.updated_at = datetime.utcnow()
+        s.commit()
+        return {
+            "monthly_cap": b.monthly_cap,
+            "food_cap": b.food_cap,
+            "shopping_cap": b.shopping_cap,
+            "transport_cap": b.transport_cap,
+            "ent_cap": b.ent_cap,
+        }
+    finally:
+        s.close()
+
+Base.metadata.create_all(engine)

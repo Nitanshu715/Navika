@@ -79,6 +79,80 @@ class AppState(rx.State):
     add_status: str = ""
     add_ok: bool = True
 
+    # ── Custom Dynamic Budgets ────────────────────────────────────────────────
+    monthly_budget_cap: float = 25000.0
+    food_budget_cap: float = 8000.0
+    shopping_budget_cap: float = 10000.0
+    transport_budget_cap: float = 4000.0
+    ent_budget_cap: float = 3000.0
+
+    edit_monthly_cap: str = "25000"
+    edit_food_cap: str = "8000"
+    edit_shopping_cap: str = "10000"
+    edit_transport_cap: str = "4000"
+    edit_ent_cap: str = "3000"
+
+    budget_modal_open: bool = False
+    budget_msg: str = ""
+
+    # Computed Budget Display
+    monthly_budget_display: str = "₹25,000"
+    remaining_budget_display: str = "₹25,000"
+    food_spent_amt: float = 0.0
+    shopping_spent_amt: float = 0.0
+    transport_spent_amt: float = 0.0
+    ent_spent_amt: float = 0.0
+
+    def set_edit_monthly_cap(self, v: str):   self.edit_monthly_cap = v
+    def set_edit_food_cap(self, v: str):      self.edit_food_cap = v
+    def set_edit_shopping_cap(self, v: str):  self.edit_shopping_cap = v
+    def set_edit_transport_cap(self, v: str): self.edit_transport_cap = v
+    def set_edit_ent_cap(self, v: str):       self.edit_ent_cap = v
+
+    def open_budget_modal(self):
+        self.edit_monthly_cap = str(int(self.monthly_budget_cap))
+        self.edit_food_cap = str(int(self.food_budget_cap))
+        self.edit_shopping_cap = str(int(self.shopping_budget_cap))
+        self.edit_transport_cap = str(int(self.transport_budget_cap))
+        self.edit_ent_cap = str(int(self.ent_budget_cap))
+        self.budget_msg = ""
+        self.budget_modal_open = True
+
+    def close_budget_modal(self):
+        self.budget_modal_open = False
+
+    def save_custom_budgets(self):
+        try:
+            m = float(self.edit_monthly_cap)
+            f = float(self.edit_food_cap)
+            s = float(self.edit_shopping_cap)
+            t = float(self.edit_transport_cap)
+            e = float(self.edit_ent_cap)
+            assert m > 0 and f >= 0 and s >= 0 and t >= 0 and e >= 0
+        except Exception:
+            self.budget_msg = "Please enter valid numeric amounts"
+            return
+        self.monthly_budget_cap = m
+        self.food_budget_cap = f
+        self.shopping_budget_cap = s
+        self.transport_budget_cap = t
+        self.ent_budget_cap = e
+        uid = self._get_uid()
+        from .auth_db import save_user_budget
+        save_user_budget(uid, m, f, s, t, e)
+        self.budget_modal_open = False
+        self._refresh()
+
+    def _load_budgets(self):
+        uid = self._get_uid()
+        from .auth_db import get_user_budget
+        b = get_user_budget(uid)
+        self.monthly_budget_cap = b.get("monthly_cap", 25000.0)
+        self.food_budget_cap = b.get("food_cap", 8000.0)
+        self.shopping_budget_cap = b.get("shopping_cap", 10000.0)
+        self.transport_budget_cap = b.get("transport_cap", 4000.0)
+        self.ent_budget_cap = b.get("ent_cap", 3000.0)
+
     # ── Sidebar collapse toggle ───────────────────────────────────────────────
     sidebar_collapsed: bool = False
 
@@ -92,6 +166,7 @@ class AppState(rx.State):
         self.active_tab = tab
         if tab == "dashboard":      self._refresh()
         elif tab == "transactions": self._load_tx()
+        elif tab == "budgets":      self._load_budgets(); self._refresh()
         elif tab == "anomalies":    self._load_anomalies()
         elif tab == "profile":      pass
         elif tab == "notes":        pass
@@ -122,18 +197,35 @@ class AppState(rx.State):
             self.avg_spent   = round(stats.get("average_spent", 0), 2)
             self.avg_spent_display   = format_currency(self.avg_spent)
             cat   = stats.get("category_totals", {})
-            total = self.total_spent or 1
-            self.food_pct          = round(cat.get("Food", 0)          / total * 100, 1)
-            self.shopping_pct      = round(cat.get("Shopping", 0)      / total * 100, 1)
-            self.transport_pct     = round(cat.get("Transport", 0)     / total * 100, 1)
-            self.entertainment_pct = round(cat.get("Entertainment", 0) / total * 100, 1)
+            self.food_spent_amt        = round(cat.get("Food", 0), 2)
+            self.shopping_spent_amt    = round(cat.get("Shopping", 0), 2)
+            self.transport_spent_amt   = round(cat.get("Transport", 0), 2)
+            self.ent_spent_amt         = round(cat.get("Entertainment", 0), 2)
+
+            f_cap = self.food_budget_cap or 1
+            s_cap = self.shopping_budget_cap or 1
+            t_cap = self.transport_budget_cap or 1
+            e_cap = self.ent_budget_cap or 1
+
+            self.food_pct          = min(100.0, round(self.food_spent_amt        / f_cap * 100, 1))
+            self.shopping_pct      = min(100.0, round(self.shopping_spent_amt    / s_cap * 100, 1))
+            self.transport_pct     = min(100.0, round(self.transport_spent_amt   / t_cap * 100, 1))
+            self.entertainment_pct = min(100.0, round(self.ent_spent_amt         / e_cap * 100, 1))
             self.top_category      = max(cat, key=cat.get) if cat else ""
         else:
             self.total_spent_display = "0.00"
             self.avg_spent_display   = "0.00"
+            self.food_pct = 0.0
+            self.shopping_pct = 0.0
+            self.transport_pct = 0.0
+            self.entertainment_pct = 0.0
+
+        rem = max(0.0, round(self.monthly_budget_cap - self.total_spent, 2))
+        self.monthly_budget_display   = format_currency(self.monthly_budget_cap)
+        self.remaining_budget_display = format_currency(rem)
         self.risk_score = (
-            "High"   if self.total_spent > 20000 else
-            "Medium" if self.total_spent > 8000  else "Low"
+            "High"   if self.total_spent > self.monthly_budget_cap else
+            "Medium" if self.total_spent > (self.monthly_budget_cap * 0.6)  else "Low"
         )
         self.anomaly_count = len(detect_anomalies(txs))
 
@@ -1584,7 +1676,8 @@ def budgets_page():
             ),
             rx.spacer(),
             rx.button(
-                "+ Set Category Target",
+                "⚙ Customize Limits",
+                on_click=AppState.open_budget_modal,
                 background=f"linear-gradient(135deg, {CYAN}, #0284c7)",
                 color="#000000",
                 font_weight="800",
@@ -1597,27 +1690,37 @@ def budgets_page():
             ),
             width="100%", margin_bottom="20px", align="center",
         ),
-        # 3 Budget Summary Tiles
+        # 3 Budget Summary Tiles (Dynamic)
         rx.hstack(
-            stat_card("MONTHLY BUDGET", "₹25,000", "", CYAN, NAV_ICONS["budgets"]),
+            stat_card("MONTHLY BUDGET", AppState.monthly_budget_display, "₹", CYAN, NAV_ICONS["budgets"]),
             stat_card("TOTAL UTILIZED", AppState.total_spent_display, "₹", PURP, NAV_ICONS["transactions"]),
-            stat_card("REMAINING CAP", "₹20,151", "", GREEN, NAV_ICONS["dashboard"]),
+            stat_card("REMAINING CAP", AppState.remaining_budget_display, "₹", GREEN, NAV_ICONS["dashboard"]),
             spacing="4", width="100%", margin_bottom="8px",
         ),
-        # Category Progress Tracker Cards
+        # Category Progress Tracker Cards (Dynamic)
         rx.box(
             rx.vstack(
                 rx.hstack(
-                    sh("Active Category Allowances", "Real-time consumption vs monthly targets"),
+                    sh("Active Category Allowances", "Real-time consumption vs your custom monthly targets"),
                     rx.spacer(),
-                    rx.text("Auto-calculated via SQLite telemetry", font_size="11.5px", color="#64748b"),
+                    rx.button(
+                        "Edit Targets",
+                        on_click=AppState.open_budget_modal,
+                        background="rgba(255,255,255,0.06)",
+                        color=CYAN,
+                        font_size="11.5px",
+                        font_weight="700",
+                        border_radius="8px",
+                        padding="4px 12px",
+                        cursor="pointer",
+                    ),
                     width="100%", align="center",
                 ),
                 rx.vstack(
-                    pbar("Food & Dining (Target: ₹8,000)", AppState.food_pct, AMBER),
-                    pbar("Shopping & Retail (Target: ₹10,000)", AppState.shopping_pct, PURP),
-                    pbar("Transport & Commute (Target: ₹4,000)", AppState.transport_pct, CYAN),
-                    pbar("Entertainment & OTT (Target: ₹3,000)", AppState.entertainment_pct, "#ec4899"),
+                    pbar("Food & Dining (Spent: ₹" + AppState.food_spent_amt.to_string() + " / Cap: ₹" + AppState.food_budget_cap.to_string() + ")", AppState.food_pct, AMBER),
+                    pbar("Shopping & Retail (Spent: ₹" + AppState.shopping_spent_amt.to_string() + " / Cap: ₹" + AppState.shopping_budget_cap.to_string() + ")", AppState.shopping_pct, PURP),
+                    pbar("Transport & Commute (Spent: ₹" + AppState.transport_spent_amt.to_string() + " / Cap: ₹" + AppState.transport_budget_cap.to_string() + ")", AppState.transport_pct, CYAN),
+                    pbar("Entertainment & OTT (Spent: ₹" + AppState.ent_spent_amt.to_string() + " / Cap: ₹" + AppState.ent_budget_cap.to_string() + ")", AppState.entertainment_pct, "#ec4899"),
                     spacing="4", width="100%", margin_top="10px",
                 ),
                 spacing="2", width="100%",
@@ -1629,6 +1732,166 @@ def budgets_page():
             box_shadow="0 16px 40px rgba(0,0,0,0.4)",
             width="100%",
         ),
+
+        # Custom Budget Limits Dialog / Modal
+        rx.cond(
+            AppState.budget_modal_open,
+            rx.box(
+                rx.box(
+                    rx.vstack(
+                        rx.hstack(
+                            rx.text("Customize Financial Limits", font_size="20px", font_weight="900", color="#ffffff"),
+                            rx.spacer(),
+                            rx.box(
+                                rx.text("✕", font_size="16px", color="#94a3b8", cursor="pointer"),
+                                on_click=AppState.close_budget_modal,
+                            ),
+                            width="100%", align="center",
+                        ),
+                        rx.text("Set your monthly allowance and category spending caps (in ₹):", font_size="13px", color="#94a3b8"),
+                        rx.cond(
+                            AppState.budget_msg != "",
+                            rx.text(AppState.budget_msg, font_size="12.5px", color=RED, font_weight="700"),
+                            rx.box(),
+                        ),
+                        # Monthly Total Cap
+                        rx.vstack(
+                            rx.text("TOTAL MONTHLY BUDGET CAP (₹)", font_size="10.5px", color="#64748b", font_weight="800", font_family=MONO),
+                            rx.input(
+                                value=AppState.edit_monthly_cap,
+                                on_change=AppState.set_edit_monthly_cap,
+                                placeholder="e.g. 25000",
+                                background="rgba(5, 10, 24, 0.8)",
+                                border="1px solid rgba(255, 255, 255, 0.12)",
+                                border_radius="10px",
+                                height="44px",
+                                color="#ffffff",
+                                width="100%",
+                            ),
+                            spacing="1", width="100%", align_items="start",
+                        ),
+                        # 2 Column Category Caps
+                        rx.hstack(
+                            rx.vstack(
+                                rx.text("FOOD & DINING (₹)", font_size="10.5px", color="#64748b", font_weight="800", font_family=MONO),
+                                rx.input(
+                                    value=AppState.edit_food_cap,
+                                    on_change=AppState.set_edit_food_cap,
+                                    placeholder="8000",
+                                    background="rgba(5, 10, 24, 0.8)",
+                                    border="1px solid rgba(255, 255, 255, 0.12)",
+                                    border_radius="10px",
+                                    height="44px",
+                                    color="#ffffff",
+                                    width="100%",
+                                ),
+                                spacing="1", flex="1", align_items="start",
+                            ),
+                            rx.vstack(
+                                rx.text("SHOPPING (₹)", font_size="10.5px", color="#64748b", font_weight="800", font_family=MONO),
+                                rx.input(
+                                    value=AppState.edit_shopping_cap,
+                                    on_change=AppState.set_edit_shopping_cap,
+                                    placeholder="10000",
+                                    background="rgba(5, 10, 24, 0.8)",
+                                    border="1px solid rgba(255, 255, 255, 0.12)",
+                                    border_radius="10px",
+                                    height="44px",
+                                    color="#ffffff",
+                                    width="100%",
+                                ),
+                                spacing="1", flex="1", align_items="start",
+                            ),
+                            spacing="3", width="100%",
+                        ),
+                        rx.hstack(
+                            rx.vstack(
+                                rx.text("TRANSPORT (₹)", font_size="10.5px", color="#64748b", font_weight="800", font_family=MONO),
+                                rx.input(
+                                    value=AppState.edit_transport_cap,
+                                    on_change=AppState.set_edit_transport_cap,
+                                    placeholder="4000",
+                                    background="rgba(5, 10, 24, 0.8)",
+                                    border="1px solid rgba(255, 255, 255, 0.12)",
+                                    border_radius="10px",
+                                    height="44px",
+                                    color="#ffffff",
+                                    width="100%",
+                                ),
+                                spacing="1", flex="1", align_items="start",
+                            ),
+                            rx.vstack(
+                                rx.text("ENTERTAINMENT (₹)", font_size="10.5px", color="#64748b", font_weight="800", font_family=MONO),
+                                rx.input(
+                                    value=AppState.edit_ent_cap,
+                                    on_change=AppState.set_edit_ent_cap,
+                                    placeholder="3000",
+                                    background="rgba(5, 10, 24, 0.8)",
+                                    border="1px solid rgba(255, 255, 255, 0.12)",
+                                    border_radius="10px",
+                                    height="44px",
+                                    color="#ffffff",
+                                    width="100%",
+                                ),
+                                spacing="1", flex="1", align_items="start",
+                            ),
+                            spacing="3", width="100%",
+                        ),
+                        # Action Buttons
+                        rx.hstack(
+                            rx.button(
+                                "Cancel",
+                                on_click=AppState.close_budget_modal,
+                                background="transparent",
+                                color="#94a3b8",
+                                font_weight="600",
+                                border_radius="10px",
+                                height="44px",
+                                padding="0 18px",
+                                cursor="pointer",
+                                _hover={"color": "#ffffff"},
+                            ),
+                            rx.spacer(),
+                            rx.button(
+                                "Save Custom Targets",
+                                on_click=AppState.save_custom_budgets,
+                                background=f"linear-gradient(135deg, {CYAN}, #0284c7)",
+                                color="#000000",
+                                font_weight="800",
+                                font_size="13px",
+                                border_radius="10px",
+                                height="44px",
+                                padding="0 22px",
+                                cursor="pointer",
+                                _hover={"opacity": 0.9},
+                            ),
+                            width="100%", align="center", margin_top="10px",
+                        ),
+                        spacing="4", width="100%", align_items="start",
+                    ),
+                    padding="30px",
+                    background="#0b1324",
+                    border="1px solid rgba(0, 212, 255, 0.3)",
+                    border_radius="20px",
+                    box_shadow="0 24px 60px rgba(0,0,0,0.8)",
+                    max_width="480px",
+                    width="92vw",
+                ),
+                position="fixed",
+                top="0",
+                left="0",
+                width="100vw",
+                height="100vh",
+                background="rgba(3, 7, 18, 0.75)",
+                backdrop_filter="blur(8px)",
+                z_index="999",
+                display="flex",
+                align_items="center",
+                justify_content="center",
+            ),
+            rx.box(),
+        ),
+
         spacing="5", width="100%", padding_bottom="40px", on_mount=AppState.on_page_load,
     )
 
