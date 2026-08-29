@@ -1,0 +1,17 @@
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+
+# SQLite Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Reflex Build & Cache
+.web
+.states
+__pycache__/
+*.py[cod]
+assets/external/
+node_modules/

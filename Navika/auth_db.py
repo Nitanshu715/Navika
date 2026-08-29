@@ -22,6 +22,7 @@ class User(Base):
     id            = Column(Integer, primary_key=True, autoincrement=True)
     email         = Column(String(255), unique=True, nullable=False, index=True)
     name          = Column(String(255), nullable=False, default="")
+    username      = Column(String(100), nullable=True)
     password_hash = Column(String(255), nullable=True)   # null for Google-only accounts
     google_id     = Column(String(255), nullable=True, unique=True)
     is_verified   = Column(Boolean, default=False)
@@ -29,6 +30,16 @@ class User(Base):
     avatar_url    = Column(Text, nullable=True)
     created_at    = Column(DateTime, default=datetime.utcnow)
     last_login    = Column(DateTime, nullable=True)
+
+
+class TransactionNote(Base):
+    __tablename__ = "transaction_notes"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    user_id    = Column(Integer, nullable=False, index=True)
+    title      = Column(String(255), nullable=False)
+    content    = Column(Text, nullable=False)
+    tag        = Column(String(50), default="General")
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class EmailVerificationToken(Base):
@@ -253,3 +264,68 @@ def delete_session(token: str):
         s.commit()
     finally:
         s.close()
+
+
+# ── Profile & Notes CRUD ──────────────────────────────────────────────────────
+
+def update_user_profile(user_id: int, name: str = None, username: str = None, avatar_url: str = None):
+    s = DBSession()
+    try:
+        u = s.query(User).filter_by(id=user_id).first()
+        if u:
+            if name is not None:
+                u.name = name.strip()
+            if username is not None:
+                u.username = username.strip().lower()
+            if avatar_url is not None:
+                u.avatar_url = avatar_url.strip()
+            s.commit()
+            s.refresh(u)
+            return u
+        return None
+    finally:
+        s.close()
+
+def create_transaction_note(user_id: int, title: str, content: str, tag: str = "General"):
+    s = DBSession()
+    try:
+        note = TransactionNote(
+            user_id=user_id,
+            title=title.strip(),
+            content=content.strip(),
+            tag=tag.strip(),
+            created_at=datetime.utcnow()
+        )
+        s.add(note)
+        s.commit()
+        s.refresh(note)
+        return note
+    finally:
+        s.close()
+
+def get_transaction_notes(user_id: int):
+    s = DBSession()
+    try:
+        notes = s.query(TransactionNote).filter_by(user_id=user_id).order_by(TransactionNote.id.desc()).all()
+        return [
+            {
+                "id": n.id,
+                "title": n.title,
+                "content": n.content,
+                "tag": n.tag,
+                "created_at": n.created_at.strftime("%Y-%m-%d %H:%M") if n.created_at else "",
+            }
+            for n in notes
+        ]
+    finally:
+        s.close()
+
+def delete_transaction_note(note_id: int, user_id: int):
+    s = DBSession()
+    try:
+        s.query(TransactionNote).filter_by(id=note_id, user_id=user_id).delete()
+        s.commit()
+    finally:
+        s.close()
+
+Base.metadata.create_all(engine)

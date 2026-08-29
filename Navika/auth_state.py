@@ -1,6 +1,7 @@
 # finance_ai/auth_state.py
 import os
 import re
+from typing import List, Dict, Any
 import reflex as rx
 from dotenv import load_dotenv
 
@@ -55,7 +56,25 @@ class AuthState(rx.State):
     user_name:    str  = ""
     user_email:   str  = ""
     user_id:      int  = 0
+    avatar_url:   str  = ""
     is_logged_in: bool = False
+
+    # ── Profile Edit Form ─────────────────────────────────────────────────────
+    first_name:          str = ""
+    last_name:           str = ""
+    username:            str = ""
+    phone:               str = ""
+    avatar_is_uploading: bool = False
+    edit_avatar_url:     str = ""
+    profile_msg:         str = ""
+    profile_ok:          bool = True
+
+    # ── Notes Management ──────────────────────────────────────────────────────
+    notes:           List[Dict[str, Any]] = []
+    note_title:      str = ""
+    note_content:    str = ""
+    note_tag:        str = "General"
+    note_msg:        str = ""
 
     # ─────────────────────────────────────────────────────────────────────────
     # Tab switching
@@ -64,6 +83,94 @@ class AuthState(rx.State):
         self.active_tab  = tab
         self.error_msg   = ""
         self.success_msg = ""
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Profile & Notes Handlers
+    # ─────────────────────────────────────────────────────────────────────────
+    def set_first_name(self, v: str):      self.first_name = v
+    def set_last_name(self, v: str):       self.last_name = v
+    def set_username(self, v: str):        self.username = v
+    def set_phone(self, v: str):           self.phone = v
+    def set_note_title(self, v: str):      self.note_title = v
+    def set_note_content(self, v: str):    self.note_content = v
+    def set_note_tag(self, v: str):        self.note_tag = v
+
+    def init_profile_fields(self):
+        parts = (self.user_name or "").split(" ", 1)
+        self.first_name = parts[0] if len(parts) > 0 else ""
+        self.last_name = parts[1] if len(parts) > 1 else ""
+        from .auth_db import get_user_from_session
+        if self.session_token:
+            u = get_user_from_session(self.session_token)
+            if u and getattr(u, "username", None):
+                self.username = u.username
+            elif not self.username:
+                self.username = (self.user_email or "").split("@")[0].lower()
+        elif not self.username:
+            self.username = (self.user_email or "").split("@")[0].lower()
+        self.edit_avatar_url = self.avatar_url
+        self.avatar_is_uploading = False
+        self.profile_msg = ""
+        self.load_notes()
+
+    def save_profile(self):
+        combined_name = f"{self.first_name} {self.last_name}".strip()
+        if not combined_name:
+            combined_name = self.username.strip()
+        if not combined_name:
+            self.profile_msg = "Name cannot be empty"; self.profile_ok = False; return
+        from .auth_db import update_user_profile
+        u = update_user_profile(
+            self.user_id,
+            name=combined_name,
+            username=self.username,
+            avatar_url=self.avatar_url
+        )
+        if u:
+            self.user_name = u.name
+            if getattr(u, "username", None):
+                self.username = u.username
+            self.profile_msg = "✓ Profile updated successfully!"; self.profile_ok = True
+        else:
+            self.profile_msg = "Failed to update profile"; self.profile_ok = False
+
+    def set_avatar_b64(self, data_uri: str):
+        if not data_uri:
+            return
+        self.edit_avatar_url = data_uri
+        self.avatar_url = data_uri
+        self.avatar_is_uploading = False
+        from .auth_db import update_user_profile
+        update_user_profile(self.user_id, avatar_url=data_uri)
+        self.profile_msg = "✓ Profile photo updated successfully!"
+        self.profile_ok = True
+
+    def reset_avatar(self):
+        self.edit_avatar_url = ""
+        self.avatar_url = ""
+        self.avatar_is_uploading = False
+        from .auth_db import update_user_profile
+        update_user_profile(self.user_id, avatar_url="")
+        self.profile_msg = "✓ Avatar reset to default icon"
+        self.profile_ok = True
+
+    def load_notes(self):
+        from .auth_db import get_transaction_notes
+        if self.user_id:
+            self.notes = get_transaction_notes(self.user_id)
+
+    def add_note(self):
+        if not self.note_title.strip() or not self.note_content.strip():
+            self.note_msg = "Title and content required"; return
+        from .auth_db import create_transaction_note
+        create_transaction_note(self.user_id, self.note_title, self.note_content, self.note_tag)
+        self.note_title = ""; self.note_content = ""; self.note_msg = ""
+        self.load_notes()
+
+    def remove_note(self, note_id: int):
+        from .auth_db import delete_transaction_note
+        delete_transaction_note(note_id, self.user_id)
+        self.load_notes()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Field setters
@@ -109,20 +216,24 @@ class AuthState(rx.State):
         self.reset_token = token
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Session
+    # Session & Persistence
     # ─────────────────────────────────────────────────────────────────────────
     def check_session(self):
         if not self.session_token:
+            self.is_logged_in = False
             return
         from .auth_db import get_user_from_session
         u = get_user_from_session(self.session_token)
         if u:
             self.is_logged_in = True
-            self.user_name    = u.name
+            self.user_name    = u.name or u.email.split("@")[0]
             self.user_email   = u.email
             self.user_id      = u.id
+            self.avatar_url   = u.avatar_url or ""
+            self.load_notes()
         else:
             self.session_token = ""
+            self.is_logged_in  = False
 
     def check_and_redirect(self):
         """on_mount for login page — redirect to dashboard if already logged in."""
