@@ -1,6 +1,6 @@
 reflex==0.8.26
 google-generativeai
-sentence-transformers
+fastembed
 faiss-cpu
 numpy
 sqlalchemy

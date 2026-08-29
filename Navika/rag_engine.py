@@ -12,7 +12,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+def _get_api_key():
+    return os.getenv("GEMINI_API_KEY", "")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Lazy Gemini client
@@ -28,10 +29,11 @@ def _get_gemini():
     if _gemini_client is not None:
         return _gemini_client, _gemini_style
 
+    api_key = _get_api_key()
     # Try the stable google-generativeai package first
     try:
         import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
+        genai.configure(api_key=api_key)
         _gemini_client = genai
         _gemini_style  = "old"
         print("[rag_engine] Using google-generativeai SDK")
@@ -42,7 +44,7 @@ def _get_gemini():
     # Fall back to newer google-genai package
     try:
         from google import genai as _genai
-        _gemini_client = _genai.Client(api_key=GEMINI_API_KEY)
+        _gemini_client = _genai.Client(api_key=api_key)
         _gemini_style  = "new"
         print("[rag_engine] Using google-genai SDK")
         return _gemini_client, _gemini_style
@@ -57,18 +59,26 @@ def _get_gemini():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Lazy SentenceTransformer
+# Ultra-Fast ONNX Embedder (fastembed: ~3-5ms CPU latency, zero PyTorch overhead)
 # ─────────────────────────────────────────────────────────────────────────────
 _embedder = None
 
 def _get_embedder():
     global _embedder
     if _embedder is None:
-        print("[rag_engine] Loading embedding model (first use, may take ~30s)...")
-        from sentence_transformers import SentenceTransformer
-        _embedder = SentenceTransformer("all-MiniLM-L6-v2")
-        print("[rag_engine] Embedding model ready.")
+        print("[rag_engine] Initializing lightweight ONNX embedding model (fastembed)...")
+        from fastembed import TextEmbedding
+        # BAAI/bge-small-en-v1.5 or sentence-transformers/all-MiniLM-L6-v2 ONNX (384-dimensional)
+        _embedder = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        print("[rag_engine] ONNX Embedding model ready.")
     return _embedder
+
+
+def _encode_texts(texts: list) -> np.ndarray:
+    embedder = _get_embedder()
+    # fastembed.embed returns an iterator of numpy arrays
+    embeddings = list(embedder.embed(texts))
+    return np.array(embeddings, dtype=np.float32)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -82,12 +92,18 @@ cursor = conn.cursor()
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS transactions (
         id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id   INTEGER DEFAULT 1,
         merchant  TEXT,
         category  TEXT,
         amount    REAL,
         timestamp TEXT
     )
 """)
+try:
+    cursor.execute("ALTER TABLE transactions ADD COLUMN user_id INTEGER DEFAULT 1")
+    conn.commit()
+except Exception:
+    pass
 conn.commit()
 
 
@@ -96,41 +112,44 @@ conn.commit()
 # ─────────────────────────────────────────────────────────────────────────────
 DIMENSION      = 384
 faiss_index    = faiss.IndexFlatL2(DIMENSION)
-metadata_store = []   # list of (id, merchant, category, amount, timestamp)
+metadata_store = []   # list of (id, merchant, category, amount, timestamp, user_id)
 
 
-def index_existing_transactions():
+def index_existing_transactions(user_id: int = None):
     global metadata_store
     if faiss_index.ntotal > 0:
         return
-    cursor.execute("SELECT id, merchant, category, amount, timestamp FROM transactions")
+    if user_id:
+        cursor.execute("SELECT id, merchant, category, amount, timestamp, user_id FROM transactions WHERE user_id = ? OR user_id IS NULL", (user_id,))
+    else:
+        cursor.execute("SELECT id, merchant, category, amount, timestamp, user_id FROM transactions")
     rows = cursor.fetchall()
     if not rows:
         return
     texts = [f"{r[4]} | {r[1]} | {r[2]} | ₹{r[3]}" for r in rows]
-    emb   = _get_embedder().encode(texts)
-    faiss_index.add(np.array(emb, dtype=np.float32))
+    emb   = _encode_texts(texts)
+    faiss_index.add(emb)
     metadata_store = list(rows)
 
 
-def add_transaction_to_rag(merchant, category, amount, timestamp):
+def add_transaction_to_rag(merchant, category, amount, timestamp, user_id: int = 1):
     cursor.execute(
-        "INSERT INTO transactions (merchant, category, amount, timestamp) VALUES (?,?,?,?)",
-        (merchant, category, amount, timestamp),
+        "INSERT INTO transactions (merchant, category, amount, timestamp, user_id) VALUES (?,?,?,?,?)",
+        (merchant, category, amount, timestamp, user_id),
     )
     conn.commit()
     tx_id = cursor.lastrowid
     text  = f"{timestamp} | {merchant} | {category} | ₹{amount}"
-    emb   = _get_embedder().encode([text])
-    faiss_index.add(np.array(emb, dtype=np.float32))
-    metadata_store.append((tx_id, merchant, category, amount, timestamp))
+    emb   = _encode_texts([text])
+    faiss_index.add(emb)
+    metadata_store.append((tx_id, merchant, category, amount, timestamp, user_id))
 
 
 def retrieve_similar(query, k=5):
     if faiss_index.ntotal == 0:
         return []
-    q_emb = _get_embedder().encode([query])
-    _, indices = faiss_index.search(np.array(q_emb, dtype=np.float32), k)
+    q_emb = _encode_texts([query])
+    _, indices = faiss_index.search(q_emb, k)
     results = []
     for idx in indices[0]:
         if 0 <= idx < len(metadata_store):
@@ -139,8 +158,11 @@ def retrieve_similar(query, k=5):
     return results
 
 
-def compute_stats():
-    cursor.execute("SELECT merchant, category, amount FROM transactions")
+def compute_stats(user_id: int = None):
+    if user_id:
+        cursor.execute("SELECT merchant, category, amount FROM transactions WHERE user_id = ? OR user_id IS NULL", (user_id,))
+    else:
+        cursor.execute("SELECT merchant, category, amount FROM transactions")
     rows = cursor.fetchall()
     if not rows:
         return {}
