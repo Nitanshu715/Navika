@@ -14,7 +14,7 @@
 
 <br/>
 
-[![Live Demo](https://img.shields.io/badge/%E2%97%88%20LIVE%20DEMO-navika.reflex.run-00d4ff?style=for-the-badge&logoColor=white)](https://navika-demo.reflex.run)
+[![Live Demo](https://img.shields.io/badge/%E2%97%88%20LIVE%20DEMO-navika.reflex.run-00d4ff?style=for-the-badge&logoColor=white)](https://navika-silver-piano.reflex.run/)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Reflex](https://img.shields.io/badge/Reflex-0.8.26-7c3aed?style=for-the-badge)](https://reflex.dev)
 [![Gemini](https://img.shields.io/badge/Gemini-2.5%20Flash-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
@@ -267,7 +267,7 @@ Copyright (c) 2026 Nitanshu
 **Crafted with precision using Python, Reflex, FAISS, FastEmbed, and Gemini.**
 
 [![GitHub](https://img.shields.io/badge/GitHub-Nitanshu715-181717?style=for-the-badge&logo=github)](https://github.com/Nitanshu715)
-[![Live Demo](https://img.shields.io/badge/%E2%97%88%20LIVE%20DEMO-navika.reflex.run-00d4ff?style=for-the-badge)](https://navika-demo.reflex.run)
+[![Live Demo](https://img.shields.io/badge/%E2%97%88%20LIVE%20DEMO-navika.reflex.run-00d4ff?style=for-the-badge)](https://navika-silver-piano.reflex.run/)
 
 *⭐ Star this repo if Navika helps streamline your financial intelligence.*
 
